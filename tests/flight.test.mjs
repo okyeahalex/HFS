@@ -1,0 +1,14 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {DT,course,pilot,step,resolveGates,autopilot,evaluate} from '../flight-core.mjs';
+test('miss is counted once and never teleports backward',()=>{const gates=course(),p=pilot(500);p.z=gates[0].z+.1;const z=p.z;step(p,[0,0,0],DT,gates);assert.ok(p.z<z);assert.equal(p.miss,1);assert.equal(p.gate,1);for(let i=0;i<100;i++)step(p,[0,0,0],DT,gates);assert.equal(p.miss,1);});
+test('swept crossing scores intersection, not frame endpoint',()=>{const gates=[{x:0,y:100,z:0,r:12}],p=pilot();p.x=30;p.y=100;p.z=-10;resolveGates(p,{x:-30,y:100,z:10},gates);assert.equal(p.hits,1);assert.equal(p.done,true);});
+test('multiple crossed gates resolve once each',()=>{const gates=[{x:0,y:100,z:0,r:12},{x:0,y:100,z:-10,r:12}],p=pilot();p.y=100;p.z=-20;resolveGates(p,{x:0,y:100,z:10},gates);assert.equal(p.hits,2);resolveGates(p,{x:0,y:100,z:-20},gates);assert.equal(p.hits,2);});
+test('crossing a cleared gate again cannot award points',()=>{const gs=course(),p=pilot();p.z=gs[0].z-1;p.y=gs[0].y;p.x=gs[0].x;resolveGates(p,{x:p.x,y:p.y,z:gs[0].z+1},gs);p.z=gs[0].z+5;resolveGates(p,{x:p.x,y:p.y,z:gs[0].z-1},gs);assert.equal(p.hits,1);});
+for(let id=0;id<3;id++)test(`baseline clears environment ${id}`,()=>assert.equal(evaluate(null,course(id),id===1?2:0).hits,course(id).length));
+test('course completes even when every gate is missed',()=>{const p=pilot(500),gs=course();while(!p.done)step(p,[0,0,0],DT,gs);assert.equal(p.miss,gs.length);assert.equal(p.gate,gs.length);assert.equal(p.hits,0);assert.equal(p.crashed,false);});
+test('ground impact stops simulation',()=>{const p=pilot();p.y=-9.9;p.gamma=-.4;step(p,[0,-1,0],DT,course());assert.equal(p.crashed,true);const old={...p};step(p,[1,1,1],DT,course());assert.deepEqual(p,old);});
+test('stall reduces lift and makes aircraft descend',()=>{const p=pilot();p.speed=15;step(p,[0,0,0],DT,course());assert.ok(p.stall);assert.ok(p.vy<0);});
+test('boost is limited and recharges',()=>{const p=pilot(),gs=course();for(let i=0;i<120;i++)step(p,[0,0,1],DT,gs);assert.ok(p.boost<.6);const b=p.boost;for(let i=0;i<60;i++)step(p,[0,0,0],DT,gs);assert.ok(p.boost>b);});
+test('restart state is fresh',()=>{const p=pilot();p.results.push(true);p.miss=4;const fresh=pilot();assert.equal(fresh.time,0);assert.deepEqual(fresh.results,[]);assert.equal(fresh.miss,0);});
+test('fixed-step state is independent of render frame rate',()=>{function simulate(hz){let acc=0,p=pilot(),gs=course();for(let f=0;f<hz*20;f++){acc+=1/hz;while(acc+1e-12>=DT){step(p,autopilot(p,gs),DT,gs);acc-=DT;}}return p;}const a=simulate(30),b=simulate(144);assert.deepEqual(a,b);});
